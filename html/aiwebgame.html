@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Galaga Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black;
+        }
+        canvas {
+            display: block;
+            margin: auto;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="gameOver">Game Over! Reload to play again.</div>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const gameOverDiv = document.getElementById("gameOver");
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        const shipWidth = 40;
+        const shipHeight = 20;
+        const bulletWidth = 5;
+        const bulletHeight = 10;
+
+        const enemy1Width = 40;
+        const enemy1Height = 20;
+        const enemy2Radius = 15;
+
+        let shipX = canvas.width / 2 - shipWidth / 2;
+        let shipY = canvas.height - shipHeight - 10;
+        let bullets = [];
+        let enemies1 = [];
+        let enemies2 = [];
+        let powerUps = [];
+        let keys = {};
+        let powerUpLevel = 0; // Tracks the player's power-up level
+        let spawnRate = 0.006; // Initial spawn rate
+        let enemySpeed = 2; // Initial enemy speed
+        let isGameOver = false;
+        let gameStartTime = Date.now(); // Track the game's start time
+
+        // Event listeners
+        document.addEventListener("keydown", (e) => (keys[e.key] = true));
+        document.addEventListener("keyup", (e) => (keys[e.key] = false));
+
+        // Increase difficulty every 2 seconds
+        setInterval(() => {
+            spawnRate += 0.001;
+            enemySpeed *= 1.05;
+        }, 2000);
+
+        // Spawn enemies and power-ups
+        function spawnEnemies() {
+            if (Math.random() < spawnRate) {
+                enemies1.push({
+                    x: Math.random() * (canvas.width - enemy1Width),
+                    y: 0,
+                    width: enemy1Width,
+                    height: enemy1Height,
+                    speed: enemySpeed,
+                });
+            }
+            if (Math.random() < spawnRate / 2 && (Date.now() - gameStartTime) > 10000) {
+                enemies2.push({
+                    x: Math.random() * (canvas.width - enemy2Radius * 2) + enemy2Radius,
+                    y: 0,
+                    radius: enemy2Radius,
+                    angle: 0,
+                    speed: enemySpeed,
+                    oscillationSpeed: 0.05,
+                });
+            }
+            if (Math.random() < 0.001) { // Adjusted spawn rate for easier testing
+                powerUps.push({
+                    x: Math.random() * (canvas.width - 20),
+                    y: 0,
+                    size: 20,
+                    speed: 2,
+                });
+            }
+        }
+
+        // Update bullets
+        function updateBullets() {
+            bullets = bullets.filter((bullet) => bullet.y > 0);
+            bullets.forEach((bullet) => {
+                bullet.y -= bullet.speed;
+                if (bullet.angle) {
+                    bullet.x += Math.tan((bullet.angle * Math.PI) / 180) * bullet.speed;
+                }
+            });
+        }
+
+        // Update enemies
+        function updateEnemies() {
+            enemies1.forEach((enemy) => (enemy.y += enemy.speed));
+            enemies2.forEach((enemy) => {
+                enemy.y += enemy.speed;
+                enemy.angle += enemy.oscillationSpeed;
+                enemy.x += Math.sin(enemy.angle) * 2;
+            });
+            enemies1 = enemies1.filter((enemy) => enemy.y < canvas.height);
+            enemies2 = enemies2.filter((enemy) => enemy.y < canvas.height);
+        }
+
+        // Update power-ups
+        function updatePowerUps() {
+            powerUps.forEach((powerUp) => (powerUp.y += powerUp.speed));
+            powerUps = powerUps.filter((powerUp) => powerUp.y < canvas.height);
+        }
+
+        // Check collisions
+        function checkCollisions() {
+            bullets.forEach((bullet, bulletIndex) => {
+                enemies1.forEach((enemy, enemyIndex) => {
+                    if (
+                        bullet.x < enemy.x + enemy.width &&
+                        bullet.x + bulletWidth > enemy.x &&
+                        bullet.y < enemy.y + enemy.height &&
+                        bullet.y + bulletHeight > enemy.y
+                    ) {
+                        bullets.splice(bulletIndex, 1);
+                        enemies1.splice(enemyIndex, 1);
+                    }
+                });
+                enemies2.forEach((enemy, enemyIndex) => {
+                    const dx = bullet.x - enemy.x;
+                    const dy = bullet.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < enemy.radius) {
+                        bullets.splice(bulletIndex, 1);
+                        enemies2.splice(enemyIndex, 1);
+                    }
+                });
+            });
+
+            enemies1.forEach((enemy) => {
+                if (
+                    shipX < enemy.x + enemy.width &&
+                    shipX + shipWidth > enemy.x &&
+                    shipY < enemy.y + enemy.height &&
+                    shipY + shipHeight > enemy.y
+                ) {
+                    gameOver();
+                }
+            });
+
+            enemies2.forEach((enemy) => {
+                const dx = shipX + shipWidth / 2 - enemy.x;
+                const dy = shipY + shipHeight / 2 - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < enemy.radius + shipWidth / 2) {
+                    gameOver();
+                }
+            });
+
+            powerUps.forEach((powerUp, index) => {
+                if (
+                    shipX < powerUp.x + powerUp.size &&
+                    shipX + shipWidth > powerUp.x &&
+                    shipY < powerUp.y + powerUp.size &&
+                    shipY + shipHeight > powerUp.y
+                ) {
+                    powerUps.splice(index, 1);
+                    powerUpLevel++;
+                }
+            });
+        }
+
+        // Game over
+        function gameOver() {
+            isGameOver = true;
+            gameOverDiv.style.display = "block";
+        }
+
+        // Draw ship
+        function drawShip() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(shipX, shipY, shipWidth, shipHeight);
+        }
+
+        // Draw bullets
+        function drawBullets() {
+            ctx.fillStyle = "yellow";
+            bullets.forEach((bullet) => {
+                ctx.fillRect(bullet.x, bullet.y, bulletWidth, bulletHeight);
+            });
+        }
+
+        // Draw enemies
+        function drawEnemies() {
+            ctx.fillStyle = "red";
+            enemies1.forEach((enemy) => {
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            });
+            ctx.fillStyle = "blue";
+            enemies2.forEach((enemy) => {
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Draw power-ups
+        function drawPowerUps() {
+            ctx.fillStyle = "green";
+            powerUps.forEach((powerUp) => {
+                ctx.fillRect(powerUp.x, powerUp.y, powerUp.size, powerUp.size);
+            });
+        }
+
+        // Update ship
+        function updateShip() {
+            if (keys["ArrowLeft"] && shipX > 0) {
+                shipX -= 5;
+            }
+            if (keys["ArrowRight"] && shipX < canvas.width - shipWidth) {
+                shipX += 5;
+            }
+            if (keys[" "] && bullets.length < 20) {
+                bullets.push({
+                    x: shipX + shipWidth / 2 - bulletWidth / 2,
+                    y: shipY,
+                    speed: 5,
+                });
+
+                if (powerUpLevel >= 2) {
+                    bullets.push(
+                        { x: shipX, y: shipY, speed: 5, angle: 10 },
+                        { x: shipX + shipWidth - bulletWidth, y: shipY, speed: 5, angle: -10 }
+                    );
+                }
+                if (powerUpLevel >= 3) {
+                    bullets.push(
+                        { x: shipX, y: shipY, speed: 5, angle: 20 },
+                        { x: shipX + shipWidth - bulletWidth, y: shipY, speed: 5, angle: -20 }
+                    );
+                }
+                if (powerUpLevel >= 4) {
+                    bullets.push({
+                        x: shipX,
+                        y: shipY,
+                        speed: 2,
+                        width: shipWidth,
+                        isSuper: true,
+                    });
+                }
+            }
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (isGameOver) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            updateShip();
+            updateBullets();
+            updateEnemies();
+            updatePowerUps();
+            checkCollisions();
+            spawnEnemies();
+
+            drawShip();
+            drawBullets();
+            drawEnemies();
+            drawPowerUps();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
+
